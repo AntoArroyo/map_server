@@ -1,0 +1,35 @@
+<Position>
+    <X>1.0</X>
+    <Y>2.0</Y>
+    <Z>3.0</Z>
+    <Orientation>
+        <X>0.0</X>
+        <Y>0.0</Y>
+        <Z>0.0</Z>
+        <W>1.0</W>
+    </Orientation>
+    <WiFi>
+        <Network>
+            <SSID>Network1</SSID>
+            <BSSID>00:11:22:33:44:55</BSSID>
+            <SIGNAL>-50</SIGNAL>
+        </Network>
+        <Network>
+            <SSID>Network2</SSID>
+            <BSSID>66:77:88:99:AA:BB</BSSID>
+            <SIGNAL>-60</SIGNAL>
+        </Network>
+    </WiFi>
+    <Bluetooth>
+        <Device>
+            <Name>Device1</Name>
+            <Address>AA:BB:CC:DD:EE:FF</Address>
+            <RSSI>-70</RSSI>
+        </Device>
+        <Device>
+            <Name>Device2</Name>
+            <Address>11:22:33:44:55:66</Address>
+            <RSSI>-80</RSSI>
+        </Device>
+    </Bluetooth>
+</Position>
