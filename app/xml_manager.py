@@ -20,6 +20,7 @@ def read_xml(filepath: str, filename: str):
         position_data = {
             "Position": {},
             "Orientation": {},
+            "Transform": {},
             "WiFi": [],
             "Bluetooth": [],
             "Timestamp": None
@@ -47,6 +48,22 @@ def read_xml(filepath: str, filename: str):
             
             if x_elem is not None and y_elem is not None and z_elem is not None and w_elem is not None:
                 position_data["Orientation"] = {
+                    "X": float(x_elem.text),
+                    "Y": float(y_elem.text),
+                    "Z": float(z_elem.text),
+                    "W": float(w_elem.text)
+                }
+                
+         # Extract transform
+        transform = position_elem.find('Transform')
+        if transform is not None:
+            x_elem = transform.find('X')
+            y_elem = transform.find('Y')
+            z_elem = transform.find('Z')
+            w_elem = transform.find('W')
+            
+            if x_elem is not None and y_elem is not None and z_elem is not None and w_elem is not None:
+                position_data["Position"] = {
                     "X": float(x_elem.text),
                     "Y": float(y_elem.text),
                     "Z": float(z_elem.text),
