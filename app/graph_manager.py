@@ -1,7 +1,6 @@
 from typing import Dict, Any, List
 import igraph as ig
 import matplotlib.pyplot as plt
-import xml_manager
 
 def create_wifi_graph(data: List[Dict[str, Any]]) -> ig.Graph:
     g = ig.Graph()
@@ -60,13 +59,3 @@ def plot_graph(g: ig.Graph, output_path: str):
     plt.savefig(output_path)
     plt.close()
 
-def main():
-    map_data = xml_manager.read_xml("uploads/", "example_data.xml")
-    print(map_data)
-    
-    graph = create_wifi_graph(map_data)
-    print(graph)
-    plot_graph(graph, 'graph_output.png')
-
-if __name__ == "__main__":
-    main()
