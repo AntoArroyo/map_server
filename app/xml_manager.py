@@ -63,7 +63,7 @@ def read_xml(filepath: str, filename: str):
             w_elem = transform.find('W')
             
             if x_elem is not None and y_elem is not None and z_elem is not None and w_elem is not None:
-                position_data["Position"] = {
+                position_data["Transform"] = {
                     "X": float(x_elem.text),
                     "Y": float(y_elem.text),
                     "Z": float(z_elem.text),
