@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 import igraph as ig
 import matplotlib.pyplot as plt
-import xml_manager
+from app.xml_manager import read_xml
 import numpy as np
 
 def create_wifi_graph(data: List[Dict[str, Any]]) -> ig.Graph:
@@ -110,8 +110,11 @@ def plot_graph(g: ig.Graph, output_path: str):
     plt.savefig(output_path)
     plt.close()
 
+
+
+############# For testing #############
 def main():
-    positions = xml_manager.read_xml("../", "wireless_data_amcl.xml")
+    positions = read_xml("../", "wireless_data_amcl.xml")
     filtered_positions = filter_close_points(positions, 3)
    # print(filtered_positions)
     grafo = create_wifi_graph(filtered_positions)
