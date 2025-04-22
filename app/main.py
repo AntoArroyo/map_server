@@ -1,12 +1,27 @@
 from typing import Union, List, Dict, Any
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 import os
 from app.xml_manager import read_xml
 import app.graph_manager as g
 import app.wifi_localization as wl
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+import app.models as models
+import app.database as database
+from app.crud import save_positions_from_list
 
 app = FastAPI()
+
+# Creates all the tables
+database.create_tables()
+
+def get_db():
+    db = database.SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 # Directory to store uploaded files
 UPLOAD_DIR = "uploads"
@@ -22,35 +37,88 @@ class WiFiScan(BaseModel):
 def read_root():
     return {"Hello": "World"}
 
-@app.put("/upload_graph/")
-async def upload_file(file: UploadFile = File(...)):
+@app.put("/upload_data/{map_name}")
+async def upload_file(map_name: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     # Log the content type for debugging
     print(f"Received file with content type: {file.content_type}")
-    
+
     if file.content_type != "text/xml":
         raise HTTPException(status_code=400, detail="Invalid file type. Only XML files are allowed.")
-    
-    file_location = os.path.join(UPLOAD_DIR, file.filename)
-    
+
     try:
-        with open(file_location, "wb") as f:
-            f.write(await file.read())
+        file_content = await file.read()  # Read the file content directly
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving file: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading file: {e}")
+
+    # Process the XML content directly
+    positions_data = read_xml(file_content)  # Assuming read_xml() can handle raw XML content
+    filtered_positions = g.filter_close_points(positions_data, 3)
     
-    return {"info": f"file '{file.filename}' saved at '{file_location}'"}
+    
+    
+    #TODO: save the map in the database
+    save_positions_from_list(db, filtered_positions, map_name, file.filename)   
+    
+    
+    
+    #graph = g.create_wifi_graph(filtered_positions)
+   
+   
+   
+    processed_maps[map_name] = filtered_positions     # saves it to memory directly
+    
+    
+   
+   
+    return {"info": f"Data stored in database for {map_name} successfully"}
+
+@app.get("/load_graph/{map_name}")
+async def load_graph(map_name: str, db: Session = Depends(get_db)):
+
+    """
+    Load data from the database for the specified map name and create a graph.
+    """
+    try:
+        # Retrieve positions from the database based on the map name
+        positions = db.query(models.Position).filter(models.Position.map_name == map_name).all()
+        
+        if not positions:
+            raise HTTPException(status_code=404, detail=f"No data found for map '{map_name}'")
+
+        # Create a graph using the retrieved positions
+        graph_data = []
+        for position in positions:
+            graph_data.append({
+                "x": position.x,
+                "y": position.y,
+                "z": position.z,
+                "timestamp": position.timestamp,
+                "wifi_signals": [{"mac": wifi.bssid, "rssi": wifi.rssi} for wifi in position.wifi_signals],
+                "bluetooth_signals": [{"mac": bt.address, "rssi": bt.rssi} for bt in position.bluetooth_signals]
+            })
+
+
+        graph = g.create_wifi_graph(graph_data)
+        
+        
+        
+        
+        return {"info": f"Graph created for map '{map_name}'", "graph": graph}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading graph: {e}")
 
 
 @app.get("/plot_graph/{graph_name}")
 async def plot_graph(graph_name: str):
-    filename = graph_name + ".xml"
+    #filename = graph_name + ".xml"
     try:
-        current_graph = read_xml(UPLOAD_DIR, filename)
+        current_graph = processed_maps.get(graph_name)
         graph = g.create_wifi_graph(current_graph)
         g.plot_graph(graph, "outputPlot")
         return {"info": f"Plotted graph '{graph_name}'"}, 
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="File not found")
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=f"Key Error: {e}")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Error reading map: {e}")
     except Exception as e:
