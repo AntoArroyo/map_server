@@ -11,7 +11,7 @@ class Position(Base):
     Y = Column(Float)
     Z = Column(Float)
     timestamp = Column(DateTime, default=datetime.utcnow)
-    map_id = Column(Integer, ForeignKey("MAPS.id"), unique=True, nullable=False)
+    map_id = Column(Integer, ForeignKey("MAPS.id"), nullable=False)
 
     wifi_signals = relationship("WiFiSignal", back_populates="position", cascade="all, delete")
     bluetooth_signals = relationship("BluetoothSignal", back_populates="position", cascade="all, delete")

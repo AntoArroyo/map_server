@@ -74,39 +74,43 @@ async def upload_file(map_name: str, file: UploadFile = File(...), db: Session =
 
 @app.get("/load_graph/{map_name}")
 async def load_graph(map_name: str, db: Session = Depends(get_db)):
-
     """
     Load data from the database for the specified map name and create a graph.
     """
     try:
-        # Retrieve positions from the database based on the map name
-        positions = db.query(models.Position).filter(models.Position.map_name == map_name).all()
-        
+        # Retrieve the map
+        map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
+        if not map_entry:
+            raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
+
+        positions = db.query(models.Position).filter(models.Position.map_id == map_entry.id).all()
         if not positions:
             raise HTTPException(status_code=404, detail=f"No data found for map '{map_name}'")
 
-        # Create a graph using the retrieved positions
         graph_data = []
         for position in positions:
             graph_data.append({
-                "x": position.x,
-                "y": position.y,
-                "z": position.z,
-                "timestamp": position.timestamp,
-                "wifi_signals": [{"mac": wifi.bssid, "rssi": wifi.rssi} for wifi in position.wifi_signals],
-                "bluetooth_signals": [{"mac": bt.address, "rssi": bt.rssi} for bt in position.bluetooth_signals]
+                "Position": {
+                    "X": position.X,
+                    "Y": position.Y,
+                    "Z": position.Z,
+                    "timestamp": position.timestamp
+                },
+                "WiFi": [{ "BSSID": wifi.bssid, "SIGNAL": wifi.rssi } for wifi in position.wifi_signals],
+                "Bluetooth": [{ "Address": bt.address, "RSSI": bt.rssi } for bt in position.bluetooth_signals]
             })
+
 
 
         graph = g.create_wifi_graph(graph_data)
         
-        
-        
-        
-        return {"info": f"Graph created for map '{map_name}'", "graph": graph}
+
+        return {"info": f"Graph created for map '{map_name}'", "graph": {str(graph)}}
 
     except Exception as e:
+        # print(traceback.format_exc())  # Uncomment for debugging
         raise HTTPException(status_code=500, detail=f"Error loading graph: {e}")
+
 
 
 @app.get("/plot_graph/{graph_name}")
