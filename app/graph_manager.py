@@ -51,7 +51,7 @@ def create_wifi_graph(data: List[Dict[str, Any]]) -> ig.Graph:
     return g
 
 
-def filter_close_points( data, threshold) -> Dict:
+def filter_close_points( data, threshold) -> list:
         """
         Filter out points that are too close to each other.
         Compares every point to ALL existing filtered with the threshold.
@@ -72,8 +72,7 @@ def filter_close_points( data, threshold) -> Dict:
         for point in positions:
             if all(np.linalg.norm(np.array(point[:3]) - np.array(p[:3])) >= threshold for p in filtered_points):
                 filtered_points.append(point)
-        
-        #TODO: Pasar los puntos filtrados con los datos wireless
+
         for entry in data:
             position = entry['Position']
             x = float(position['X'])
@@ -95,7 +94,7 @@ def filter_close_points( data, threshold) -> Dict:
 
 def plot_graph(g: ig.Graph, output_path: str):
     layout = g.layout("kk")
-    fig, ax = plt.subplots(figsize=(10, 10))
+    _, ax = plt.subplots(figsize=(10, 10))
     ig.plot(
         g,
         target=ax,

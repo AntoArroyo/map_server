@@ -20,9 +20,8 @@ class Map(Base):
     __tablename__ = "MAPS"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False, index=True)
-    #position_id = Column(Integer, ForeignKey("POSITIONS.id"))
     filename = Column(String, unique=True, nullable=False, index=True)
-    #position = relationship("Position", back_populates="map")
+
 
 class WiFiSignal(Base):
     __tablename__ = "WIFI_SIGNALS"

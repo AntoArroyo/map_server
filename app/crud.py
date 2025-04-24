@@ -66,9 +66,9 @@ def create_bt_signal(db: Session, bt: schemas.BluetoothSignalBase, position_id: 
     return db_bt
 
 def save_positions_from_list(db: Session, positions_data: list, map_name: str, filename: str):
-    map = create_map(db, map_name, filename)
+    map_data = create_map(db, map_name, filename)
     for pos_dict in positions_data:
-        position = create_position(db, pos_dict, map.id)
+        position = create_position(db, pos_dict, map_data.id)
         for wifi in pos_dict.get("WiFi"):
             create_wifi_signal(db, wifi, position.id)
         for bt in pos_dict.get("Bluetooth"):

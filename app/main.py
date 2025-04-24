@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 import app.models as models
 import app.database as database
 from app.crud import save_positions_from_list
+from app.schemas import PositionCreate, PositionDeleteRequest
 
 app = FastAPI()
 
@@ -54,26 +55,17 @@ async def upload_file(map_name: str, file: UploadFile = File(...), db: Session =
     positions_data = read_xml(file_content)  # Assuming read_xml() can handle raw XML content
     filtered_positions = g.filter_close_points(positions_data, 3)
     
-    
-    
-    #TODO: save the map in the database
+
     save_positions_from_list(db, filtered_positions, map_name, file.filename)   
     
     
-    
-    #graph = g.create_wifi_graph(filtered_positions)
-   
-   
-   
     processed_maps[map_name] = filtered_positions     # saves it to memory directly
     
-    
-   
-   
+       
     return {"info": f"Data stored in database for {map_name} successfully"}
 
-@app.get("/load_graph/{map_name}")
-async def load_graph(map_name: str, db: Session = Depends(get_db)):
+@app.get("/load_map/{map_name}")
+async def load_map(map_name: str, db: Session = Depends(get_db)):
     """
     Load data from the database for the specified map name and create a graph.
     """
@@ -83,10 +75,12 @@ async def load_graph(map_name: str, db: Session = Depends(get_db)):
         if not map_entry:
             raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
 
+        # Retrieve associated positions
         positions = db.query(models.Position).filter(models.Position.map_id == map_entry.id).all()
         if not positions:
             raise HTTPException(status_code=404, detail=f"No data found for map '{map_name}'")
 
+        # Create graph data structure
         graph_data = []
         for position in positions:
             graph_data.append({
@@ -100,22 +94,34 @@ async def load_graph(map_name: str, db: Session = Depends(get_db)):
                 "Bluetooth": [{ "Address": bt.address, "RSSI": bt.rssi } for bt in position.bluetooth_signals]
             })
 
-
-
+        # Create the graph
         graph = g.create_wifi_graph(graph_data)
-        
 
-        return {"info": f"Graph created for map '{map_name}'", "graph": {str(graph)}}
+        # Save or update graph in processed_maps
+        if processed_maps.get(map_name) is None:
+            processed_maps[map_name] = graph
+            return {
+                "info": f"Graph created and stored for map '{map_name}'",
+                "graph_summary": graph.summary()
+            }
+        else:
+            # Optional: Replace the existing graph
+            processed_maps[map_name] = graph
+            return {
+                "info": f"Graph for map '{map_name}' was updated",
+                "graph_summary": graph.summary()
+            }
 
+    except HTTPException:
+        raise  # Re-raise known HTTP exceptions as-is
     except Exception as e:
-        # print(traceback.format_exc())  # Uncomment for debugging
         raise HTTPException(status_code=500, detail=f"Error loading graph: {e}")
+
 
 
 
 @app.get("/plot_graph/{graph_name}")
 async def plot_graph(graph_name: str):
-    #filename = graph_name + ".xml"
     try:
         current_graph = processed_maps.get(graph_name)
         graph = g.create_wifi_graph(current_graph)
@@ -128,16 +134,133 @@ async def plot_graph(graph_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
+@app.post("/delete_map/{map_name}")
+async def delete_map(map_name: str, db: Session = Depends(get_db)):
+    try:
+        # Retrieve the map
+        map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
+        if not map_entry:
+            raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
 
+        # Retrieve all positions for the map
+        positions = db.query(models.Position).filter(models.Position.map_id == map_entry.id).all()
+        if not positions:
+            raise HTTPException(status_code=404, detail=f"No data found for map '{map_name}'")
+
+        # Delete associated WiFi and Bluetooth signals first
+        for position in positions:
+            db.query(models.WiFiSignal).filter(models.WiFiSignal.position_id == position.id).delete()
+            db.query(models.BluetoothSignal).filter(models.BluetoothSignal.position_id == position.id).delete()
+
+        # Delete the positions
+        db.query(models.Position).filter(models.Position.map_id == map_entry.id).delete()
+
+        # Delete the map
+        db.delete(map_entry)
+
+        db.commit()
+        return {"info": f"Map '{map_name}' and all associated data have been deleted."}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting map: {e}")
+
+@app.post("/add_entry/{map_name}")
+async def add_entry(map_name: str, entry: PositionCreate, db: Session = Depends(get_db)):
+    try:
+        # Retrieve the map
+        map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
+        if not map_entry:
+            raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
+
+        # Create and store the position
+        new_position = models.Position(
+            X=entry.pos_x,
+            Y=entry.pos_y,
+            Z=entry.pos_z,
+            timestamp=entry.timestamp,
+            map_id=map_entry.id
+        )
+        db.add(new_position)
+        db.flush()  # Get ID before adding related records
+
+        # Store Wi-Fi signals
+        for wifi in entry.wifi_signals:
+            new_wifi = models.WiFiSignal(
+                position_id=new_position.id,
+                bssid=wifi.bssid,
+                rssi=wifi.rssi
+            )
+            db.add(new_wifi)
+
+        # Store Bluetooth signals (if any)
+        for bt in entry.bluetooth_signals:
+            new_bt = models.BluetoothSignal(
+                position_id=new_position.id,
+                address=bt.address,
+                rssi=bt.rssi
+            )
+            db.add(new_bt)
+
+        db.commit()
+        return {"info": f"Entry successfully added to map '{map_name}'."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error adding entry: {e}")
+
+@app.delete("/delete_entry/{map_name}")
+async def delete_entry(map_name: str, entry: PositionDeleteRequest, db: Session = Depends(get_db)):
+    try:
+        # Find the map
+        map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
+        if not map_entry:
+            raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
+
+        # Find the position
+        position = db.query(models.Position).filter(
+            models.Position.map_id == map_entry.id,
+            models.Position.X == entry.pos_x,
+            models.Position.Y == entry.pos_y,
+            models.Position.Z == entry.pos_z
+        ).first()
+
+        if not position:
+            raise HTTPException(status_code=404, detail="No matching position entry found.")
+
+        # Delete related Wi-Fi signals
+        db.query(models.WiFiSignal).filter(models.WiFiSignal.position_id == position.id).delete()
+
+        # Delete related Bluetooth signals
+        db.query(models.BluetoothSignal).filter(models.BluetoothSignal.position_id == position.id).delete()
+
+        # Delete the position
+        db.delete(position)
+        db.commit()
+
+        return {"info": "Entry successfully deleted."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting entry: {e}")
+
+
+
+#############################################################################################################################
+"""
 @app.post("/process_graph/{graph_name}")
 async def process_graph(graph_name: str, 
                      rssi_threshold: float = -85.0, 
                      apply_smoothing: bool = True,
                      remove_duplicates: bool = True,
                      detect_outliers: bool = True):
-    """
+    """"""
     Process and filter a WiFi map for improved localization
-    """
+    """"""
     filename = graph_name + ".xml"
     try:
         # Read the map
@@ -178,9 +301,9 @@ async def process_graph(graph_name: str,
 async def localize_position(graph_name: str, scan: WiFiScan, 
                            similarity_threshold: float = 0.6,
                            blend_threshold: float = 0.4):
-    """
+    """"""
     Localize user position based on WiFi scan against a processed map
-    """
+    """"""
     try:
         # Check if map exists and is processed
         if graph_name not in processed_maps:
@@ -232,9 +355,9 @@ async def cluster_graph(graph_name: str,
                      apply_spectral: bool = True,
                      apply_dbscan: bool = True,
                      spectral_k: int = 5):
-    """
+    """"""
     Apply clustering algorithms to a WiFi map
-    """
+    """"""
     try:
         # Check if map exists and is processed
         if graph_name not in processed_maps:
@@ -293,3 +416,4 @@ async def cluster_graph(graph_name: str,
         raise HTTPException(status_code=404, detail=f"Graph '{graph_name}' not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Clustering error: {e}")
+"""
