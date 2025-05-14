@@ -1,5 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
+import datetime
 
 class WiFiSignalBase(BaseModel):
     bssid: str  
@@ -38,5 +39,20 @@ class Position(PositionBase):
     id: int
     timestamp: Optional[str]
 
-    class Config:
-        orm_mode = True  # Enable ORM mode for SQLAlchemy compatibility
+
+model_config = ConfigDict(from_attributes=True)
+# Enable ORM mode for SQLAlchemy compatibility
+
+
+class User(BaseModel):
+    username: str
+    email :str
+    disable: bool
+    
+class WiFiScanPayload(BaseModel):
+    device_id: str
+    wifi_signals: List[WiFiSignalBase]
+    
+class LocalizationRequest(BaseModel):
+    map_name: str
+    wifi_signals: List[WiFiSignalBase]

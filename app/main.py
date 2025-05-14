@@ -1,15 +1,19 @@
-from typing import Union, List, Dict, Any
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 import os
-from app.xml_manager import read_xml
 import app.graph_manager as g
 import app.wifi_localization as wl
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
 import app.models as models
 import app.database as database
+from app.xml_manager import read_xml
+from pydantic import BaseModel
+from sqlalchemy.orm import Session, declarative_base
+from typing import Union, List, Dict, Any
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from app.crud import save_positions_from_list
-from app.schemas import PositionCreate, PositionDeleteRequest
+from app.schemas import PositionCreate, PositionDeleteRequest, WiFiScanPayload
+from app.auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_admin
+from fastapi.security import OAuth2PasswordRequestForm
+from datetime import timedelta
+from app.localize_functions import compute_best_position
 
 app = FastAPI()
 
@@ -29,7 +33,8 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # In-memory storage for processed WiFi data
-processed_maps = {}
+processed_maps_data = {}
+processed_maps_graphs = {}
 
 class WiFiScan(BaseModel):
     wifi_data: List[Dict[str, Any]]
@@ -38,8 +43,22 @@ class WiFiScan(BaseModel):
 def read_root():
     return {"Hello": "World"}
 
+
+@app.post("/token")
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user["username"]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
 @app.put("/upload_data/{map_name}")
-async def upload_file(map_name: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_file(map_name: str, file: UploadFile = File(...),
+                      db: Session = Depends(get_db), current_user: dict = Depends(get_current_admin)):
     # Log the content type for debugging
     print(f"Received file with content type: {file.content_type}")
 
@@ -59,13 +78,14 @@ async def upload_file(map_name: str, file: UploadFile = File(...), db: Session =
     save_positions_from_list(db, filtered_positions, map_name, file.filename)   
     
     
-    processed_maps[map_name] = filtered_positions     # saves it to memory directly
+    processed_maps_data[map_name] = filtered_positions     # saves it to memory directly
     
        
     return {"info": f"Data stored in database for {map_name} successfully"}
 
 @app.get("/load_map/{map_name}")
-async def load_map(map_name: str, db: Session = Depends(get_db)):
+async def load_map(map_name: str, db: Session = Depends(get_db), 
+                   current_user: dict = Depends(get_current_admin)):
     """
     Load data from the database for the specified map name and create a graph.
     """
@@ -94,19 +114,20 @@ async def load_map(map_name: str, db: Session = Depends(get_db)):
                 "Bluetooth": [{ "Address": bt.address, "RSSI": bt.rssi } for bt in position.bluetooth_signals]
             })
 
+        processed_maps_data[map_name] = graph_data
         # Create the graph
         graph = g.create_wifi_graph(graph_data)
 
         # Save or update graph in processed_maps
-        if processed_maps.get(map_name) is None:
-            processed_maps[map_name] = graph
+        if processed_maps_data.get(map_name) is None:
+            processed_maps_graphs[map_name] = graph
             return {
                 "info": f"Graph created and stored for map '{map_name}'",
                 "graph_summary": graph.summary()
             }
         else:
             # Optional: Replace the existing graph
-            processed_maps[map_name] = graph
+            processed_maps_graphs[map_name] = graph
             return {
                 "info": f"Graph for map '{map_name}' was updated",
                 "graph_summary": graph.summary()
@@ -121,9 +142,9 @@ async def load_map(map_name: str, db: Session = Depends(get_db)):
 
 
 @app.get("/plot_graph/{graph_name}")
-async def plot_graph(graph_name: str):
+async def plot_graph(graph_name: str, current_user: dict = Depends(get_current_admin)):
     try:
-        current_graph = processed_maps.get(graph_name)
+        current_graph = processed_maps_graphs.get(graph_name)
         graph = g.create_wifi_graph(current_graph)
         g.plot_graph(graph, "outputPlot")
         return {"info": f"Plotted graph '{graph_name}'"}, 
@@ -135,7 +156,8 @@ async def plot_graph(graph_name: str):
         raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 @app.post("/delete_map/{map_name}")
-async def delete_map(map_name: str, db: Session = Depends(get_db)):
+async def delete_map(map_name: str, db: Session = Depends(get_db),
+                     current_user: dict = Depends(get_current_admin)):
     try:
         # Retrieve the map
         map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
@@ -166,7 +188,8 @@ async def delete_map(map_name: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error deleting map: {e}")
 
 @app.post("/add_entry/{map_name}")
-async def add_entry(map_name: str, entry: PositionCreate, db: Session = Depends(get_db)):
+async def add_entry(map_name: str, entry: PositionCreate, db: Session = Depends(get_db),
+                    current_user: dict = Depends(get_current_admin)):
     try:
         # Retrieve the map
         map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
@@ -212,7 +235,8 @@ async def add_entry(map_name: str, entry: PositionCreate, db: Session = Depends(
         raise HTTPException(status_code=500, detail=f"Error adding entry: {e}")
 
 @app.delete("/delete_entry/{map_name}")
-async def delete_entry(map_name: str, entry: PositionDeleteRequest, db: Session = Depends(get_db)):
+async def delete_entry(map_name: str, entry: PositionDeleteRequest,
+                       db: Session = Depends(get_db), current_user: dict = Depends(get_current_admin)):
     try:
         # Find the map
         map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
@@ -248,6 +272,18 @@ async def delete_entry(map_name: str, entry: PositionDeleteRequest, db: Session 
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting entry: {e}")
 
+
+@app.post("/localize/{map_name}")
+async def localize(map_name: str, payload: WiFiScanPayload):
+    # For now, just log the received data
+    print(f"Received Wi-Fi data from device {payload.device_id} at {payload.timestamp}")
+    for signal in payload.wifi_signals:
+        print(f" - {signal.mac_address} ({signal.ssid}): RSSI {signal.rssi}")
+
+    
+    positon = compute_best_position(payload.wifi_signals, processed_maps_data[map_name].get())
+
+    return {"estimated_position": positon, "map": map_name}
 
 
 #############################################################################################################################

@@ -1,7 +1,10 @@
+from pydantic import ConfigDict
 from sqlalchemy import Column, Integer, Float, String, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
+
+model_config = ConfigDict(from_attributes=True)
 
 class Position(Base):
     __tablename__ = "POSITIONS"
@@ -30,7 +33,8 @@ class WiFiSignal(Base):
     bssid = Column(String, index=True)
     rssi = Column(Float)
     position_id = Column(Integer, ForeignKey("POSITIONS.id"))
-
+    map_id = Column(Integer, ForeignKey("MAPS.id"))
+    map_name = Column(String, ForeignKey("MAPS.name"))
     position = relationship("Position", back_populates="wifi_signals")
 
 class BluetoothSignal(Base):
