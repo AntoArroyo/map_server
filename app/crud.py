@@ -12,9 +12,6 @@ def create_map(db: Session, map_name: str, filename: str):
     
     return db_map
     
-
-
-
 def create_position(db: Session, point: dict, map_id: int):
     db_position = models.Position(
         X=point["Position"]["X"],
@@ -34,9 +31,6 @@ def create_position(db: Session, point: dict, map_id: int):
 
     db.commit()
     return db_position
-
-
-
 
 def get_all_positions(db: Session, map_id: int):
     return db.query(models.Position).filter(models.Position.map_id == map_id).all()

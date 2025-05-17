@@ -13,7 +13,7 @@ from app.schemas import PositionCreate, PositionDeleteRequest, WiFiScanPayload
 from app.auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_admin
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
-from app.localize_functions import compute_best_position
+from app.localize_functions import compute_best_position_basic
 
 app = FastAPI()
 
@@ -275,13 +275,14 @@ async def delete_entry(map_name: str, entry: PositionDeleteRequest,
 
 @app.post("/localize/{map_name}")
 async def localize(map_name: str, payload: WiFiScanPayload):
-    # For now, just log the received data
-    print(f"Received Wi-Fi data from device {payload.device_id} at {payload.timestamp}")
-    for signal in payload.wifi_signals:
-        print(f" - {signal.mac_address} ({signal.ssid}): RSSI {signal.rssi}")
 
+    print(f"Received Wi-Fi data from device {payload.device_id}")
     
-    positon = compute_best_position(payload.wifi_signals, processed_maps_data[map_name].get())
+    scanned_signals = payload.wifi_signals
+    for signal in scanned_signals:
+        print(f" SINGAL PAYLOAD - {signal.bssid} --  RSSI {signal.rssi}")
+    
+    positon = compute_best_position_basic(processed_maps_data[map_name], payload.wifi_signals)
 
     return {"estimated_position": positon, "map": map_name}
 
