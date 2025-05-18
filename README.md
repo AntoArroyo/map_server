@@ -42,8 +42,8 @@ This project provides a FastAPI-based backend to collect, manage, and use Wi-Fi 
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/yourusername/wifi-localization-api.git
-cd wifi-localization-api
+git clone https://https://github.com/AntoArroyo/map_server
+cd map_server
 ```
 
 2. **Create a virtual environment**
@@ -72,8 +72,8 @@ uvicorn main:app --reload
 If you prefer using Docker:
 
 ```bash
-docker build -t wifi-localization-api .
-docker run -d -p 8000:8000 wifi-localization-api
+docker build -t map_server .
+docker run -d -p 8000:8000 map_server
 ```
 
 ---
@@ -175,29 +175,8 @@ GET /plot_graph/{graph_name}
 
 - Saves a plot of the loaded graph to an image (e.g., `outputPlot.png`)
 
----
-
-## 🧪 Testing
-
-To run tests (if you have them configured):
-
-```bash
-pytest
-```
-
----
 
 ## 📌 Dependencies
-
-- FastAPI
-- SQLAlchemy
-- Pydantic
-- uvicorn
-- matplotlib
-- networkx or igraph (depending on your graph backend)
-- xmltodict
-- python-jose
-- passlib
 
 Install them via:
 
@@ -206,7 +185,3 @@ pip install -r requirements.txt
 ```
 
 ---
-
-## 📬 License
-
-This project is licensed under the MIT License.
