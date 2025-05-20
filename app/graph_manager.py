@@ -1,8 +1,9 @@
 from typing import Dict, Any, List
 import igraph as ig
 import matplotlib.pyplot as plt
-from app.xml_manager import read_xml
+from app.xml_manager import read_xml_from_file
 import numpy as np
+import os
 
 def create_wifi_graph(data: List[Dict[str, Any]]) -> ig.Graph:
     g = ig.Graph()
@@ -93,6 +94,11 @@ def filter_close_points( data, threshold) -> list:
 
 
 def plot_graph(g: ig.Graph, output_path: str):
+    # Create directory if it doesn't exist
+    output_dir = os.path.dirname(output_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     layout = g.layout("kk")
     _, ax = plt.subplots(figsize=(10, 10))
     ig.plot(
@@ -101,8 +107,8 @@ def plot_graph(g: ig.Graph, output_path: str):
         layout=layout,
         vertex_label=g.vs["name"],
         vertex_color=["blue" if v["type"] == "position" else "red" for v in g.vs],
-        edge_width=[w / 10.0 for w in g.es["rssi"]],  # Use 'rssi' instead of 'weight'
-        edge_label=g.es["rssi"],  # Add edge labels showing RSSI values
+        edge_width=[w / 10.0 for w in g.es["rssi"]],  
+        edge_label=g.es["rssi"],
         vertex_size=0.5,
         mark_groups=True
     )
@@ -110,10 +116,9 @@ def plot_graph(g: ig.Graph, output_path: str):
     plt.close()
 
 
-
 ############# For testing #############
 def main():
-    positions = read_xml("../", "wireless_data_amcl.xml")
+    positions = read_xml_from_file("../", "wireless_data_amcl.xml")
     filtered_positions = filter_close_points(positions, 3)
    # print(filtered_positions)
     grafo = create_wifi_graph(filtered_positions)

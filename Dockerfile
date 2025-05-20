@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy files
 COPY ./app ./app
-COPY ./output_graph ./output_graph
+COPY ./output_graphs ./output_graphs
 COPY ./tests ./tests
 
 # Install and run tests

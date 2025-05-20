@@ -13,7 +13,7 @@ from app.schemas import PositionCreate, PositionDeleteRequest, WiFiScanPayload
 from app.auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_admin
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
-from app.localize_functions import compute_best_position_basic
+from app.localize_functions import compute_best_position_basic, match_graphs_return_position, match_graphs
 
 app = FastAPI()
 
@@ -144,9 +144,8 @@ async def load_map(map_name: str, db: Session = Depends(get_db),
 @app.get("/plot_graph/{graph_name}")
 async def plot_graph(graph_name: str, current_user: dict = Depends(get_current_admin)):
     try:
-        current_graph = processed_maps_graphs.get(graph_name)
-        graph = g.create_wifi_graph(current_graph)
-        g.plot_graph(graph, "outputPlot")
+        
+        g.plot_graph(processed_maps_graphs.get(graph_name), f"output_graphs/{graph_name}_plot.png")
         return {"info": f"Plotted graph '{graph_name}'"}, 
     except KeyError as e:
         raise HTTPException(status_code=404, detail=f"Key Error: {e}")
@@ -273,8 +272,8 @@ async def delete_entry(map_name: str, entry: PositionDeleteRequest,
         raise HTTPException(status_code=500, detail=f"Error deleting entry: {e}")
 
 
-@app.post("/localize/{map_name}")
-async def localize(map_name: str, payload: WiFiScanPayload):
+@app.post("/localize_basic/{map_name}")
+async def localize_basic(map_name: str, payload: WiFiScanPayload):
 
     print(f"Received Wi-Fi data from device {payload.device_id}")
     
@@ -285,6 +284,39 @@ async def localize(map_name: str, payload: WiFiScanPayload):
     positon = compute_best_position_basic(processed_maps_data[map_name], payload.wifi_signals)
 
     return {"estimated_position": positon, "map": map_name}
+
+@app.post("/localize/{map_name}")
+async def localize(map_name: str, payload: WiFiScanPayload):
+
+    print(f"Received Wi-Fi data from device {payload.device_id}")
+    
+    scanned_signals = payload.wifi_signals
+    for signal in scanned_signals:
+        print(f" SINGAL PAYLOAD - {signal.bssid} --  RSSI {signal.rssi}")
+    wifi_list = []
+    for entry in scanned_signals:
+        wifi_list.append({
+            "BSSID": entry.bssid,
+            "SIGNAL": entry.rssi
+        })
+    
+    
+    graph_dict = []
+    graph_dict.append({
+        "Position": {
+            "X": -1,
+            "Y": -1,
+            "Z": -1
+        },
+        "WiFi": wifi_list
+    })    
+        
+    scanned_graph = g.create_wifi_graph(graph_dict)
+    #compute_rrwm_to_graphs(scanned_graph, processed_maps_graphs[map_name])
+    score, node = match_graphs_return_position(scanned_graph, processed_maps_graphs[map_name])
+
+    return {"estimated_position": node, "map": map_name}
+
 
 
 #############################################################################################################################

@@ -11,6 +11,9 @@ services:
       - DATABASE_URL=${DATABASE_URL}
     depends_on:
       - db
+    volumes:
+    - ./output_graphs:/app/output_graphs
+
   
   db:
     image: postgres:15
