@@ -5,7 +5,7 @@ import app.models as models
 import app.database as database
 from app.xml_manager import read_xml
 from pydantic import BaseModel
-from sqlalchemy.orm import Session, declarative_base
+from sqlalchemy.orm import Session
 from typing import Union, List, Dict, Any
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from app.crud import save_positions_from_list
@@ -288,6 +288,9 @@ async def localize_basic(map_name: str, payload: WiFiScanPayload):
 @app.post("/localize/{map_name}")
 async def localize(map_name: str, payload: WiFiScanPayload):
 
+    if processed_maps_graphs.get(map_name) is None:
+        raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
+    
     print(f"Received Wi-Fi data from device {payload.device_id}")
     
     scanned_signals = payload.wifi_signals
@@ -315,7 +318,7 @@ async def localize(map_name: str, payload: WiFiScanPayload):
     #compute_rrwm_to_graphs(scanned_graph, processed_maps_graphs[map_name])
     score, node = match_graphs_return_position(scanned_graph, processed_maps_graphs[map_name])
 
-    return {"estimated_position": node, "map": map_name}
+    return {"estimated_position": node, "score": str(score), "map": map_name}
 
 
 
