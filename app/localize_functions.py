@@ -2,6 +2,7 @@ import pygmtools as pygm
 pygm.BACKEND = 'pytorch'  # or 'numpy', depending on your setup
 
 import networkx as nx
+import igraph as ig
 from igraph import Graph
 import numpy as np
 import torch
@@ -326,3 +327,48 @@ def get_vertex_attribute(vertex, attr_name, default=None):
         return default
     except (KeyError, TypeError):
         return default
+    
+    
+def get_node_basic_graph(scan_data: List[Tuple[str, float]], g: ig.Graph) -> str:
+    """
+    scan_data: list of (BSSID, RSSI)
+    g: igraph.Graph with positions and wifi nodes
+    Returns: name of the most likely position node
+    """
+    scan_dict = dict(scan_data)
+    position_nodes = [v.index for v in g.vs if v["type"] == "position"]
+
+    best_match = None
+    best_score = float('-inf')
+
+    for pos_idx in position_nodes:
+        pos_name = g.vs[pos_idx]["name"]
+        edges = g.incident(pos_idx, mode="OUT")
+        bssid_rssi = {}
+
+        for e in edges:
+            edge = g.es[e]
+            target = edge.target
+            target_vertex = g.vs[target]
+            if target_vertex["type"] == "wifi":
+                bssid = target_vertex["name"]
+                rssi = edge["rssi"]
+                bssid_rssi[bssid] = rssi
+
+        # Check for matching BSSIDs
+        common_bssids = set(scan_dict.keys()).intersection(bssid_rssi.keys())
+        if not common_bssids:
+            continue
+
+        # Calculate similarity score
+        rssi_diffs = [abs(scan_dict[b] - bssid_rssi[b]) for b in common_bssids]
+        avg_diff = np.mean(rssi_diffs)
+        score = len(common_bssids) - avg_diff / 10.0  # Higher = better
+
+        print(f"[DEBUG] Position {pos_name}: common={len(common_bssids)}, avg_diff={avg_diff:.2f}, score={score:.2f}")
+
+        if score > best_score:
+            best_score = score
+            best_match = pos_name
+
+    return best_match

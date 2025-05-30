@@ -13,7 +13,7 @@ from app.schemas import PositionCreate, PositionDeleteRequest, WiFiScanPayload
 from app.auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_admin
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
-from app.localize_functions import compute_best_position_basic, match_graphs_return_position, match_graphs
+from app.localize_functions import compute_best_position_basic, get_node_basic_graph, match_graphs_return_position, match_graphs
 
 app = FastAPI()
 
@@ -71,14 +71,14 @@ async def upload_file(map_name: str, file: UploadFile = File(...),
         raise HTTPException(status_code=500, detail=f"Error reading file: {e}")
 
     # Process the XML content directly
-    positions_data = read_xml(file_content)  # Assuming read_xml() can handle raw XML content
+    positions_data = read_xml(file_content) 
     filtered_positions = g.filter_close_points(positions_data, 3)
     
 
     save_positions_from_list(db, filtered_positions, map_name, file.filename)   
     
     
-    processed_maps_data[map_name] = filtered_positions     # saves it to memory directly
+   # processed_maps_data[map_name] = filtered_positions     # saves it to memory directly
     
        
     return {"info": f"Data stored in database for {map_name} successfully"}
@@ -119,7 +119,7 @@ async def load_map(map_name: str, db: Session = Depends(get_db),
         graph = g.create_wifi_graph(graph_data)
 
         # Save or update graph in processed_maps
-        if processed_maps_data.get(map_name) is None:
+        if processed_maps_graphs.get(map_name) is None:
             processed_maps_graphs[map_name] = graph
             return {
                 "info": f"Graph created and stored for map '{map_name}'",
@@ -320,6 +320,22 @@ async def localize(map_name: str, payload: WiFiScanPayload):
 
     return {"estimated_position": node, "score": str(score), "map": map_name}
 
+@app.post("/localize_basic_graph/{map_name}")
+async def localize_basic_graph(map_name: str, payload: WiFiScanPayload):
+    
+    if processed_maps_graphs.get(map_name) is None:
+        raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
+    
+    print(f"Received Wi-Fi data from device {payload.device_id}")
+    
+    wifi_list = []
+    for wifi_values in payload.wifi_signals:
+        wifi_list.append((wifi_values.bssid, wifi_values.rssi))
+    
+    node = get_node_basic_graph(wifi_list, processed_maps_graphs[map_name])        
+    if node:
+        return {"Best match": node}
+    return {"No match found, try to move again"}
 
 
 #############################################################################################################################
