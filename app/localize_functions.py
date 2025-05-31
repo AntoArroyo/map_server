@@ -335,7 +335,7 @@ def get_node_basic_graph(scan_data: List[Tuple[str, float]], g: ig.Graph, sigma:
     sigma: standard deviation for Gaussian similarity
     penalty_per_missing: penalty per missing expected BSSID
 
-    Returns: name of the most likely position node
+    Returns: name of the most likely position node or None there is no match
     """
     scan_dict = dict(scan_data)
     position_nodes = [v.index for v in g.vs if v["type"] == "position"]
@@ -375,12 +375,12 @@ def get_node_basic_graph(scan_data: List[Tuple[str, float]], g: ig.Graph, sigma:
         # Total score
         score = signal_score - penalty
 
-        print(f"[DEBUG] Position {pos_name}: matched={len(common_bssids)}, missing={len(missing_bssids)}, signal_score={signal_score:.2f}, penalty={penalty:.2f}, total={score:.2f}")
+       # print(f"[DEBUG] Position {pos_name}: matched={len(common_bssids)}, missing={len(missing_bssids)}, signal_score={signal_score:.2f}, penalty={penalty:.2f}, total={score:.2f}")
 
         if score > best_score:
             best_score = score
             best_match = pos_name
 
-    if best_match is None:
-        print("No suitable match found.")
+    print(f"Node found -- {best_match} with score -- {best_score}")
+    # If there's no match returns None
     return best_match

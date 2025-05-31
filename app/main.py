@@ -334,7 +334,7 @@ async def localize_basic_graph(map_name: str, payload: WiFiScanPayload):
     
     node = get_node_basic_graph(wifi_list, processed_maps_graphs[map_name])        
     if node:
-        return {"Best match": node}
+        return {"Position": node}
     return {"No match found, try to move again"}
 
 
