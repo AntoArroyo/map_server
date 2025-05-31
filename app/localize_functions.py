@@ -328,11 +328,13 @@ def get_vertex_attribute(vertex, attr_name, default=None):
     except (KeyError, TypeError):
         return default
     
-    
-def get_node_basic_graph(scan_data: List[Tuple[str, float]], g: ig.Graph) -> str:
+def get_node_basic_graph(scan_data: List[Tuple[str, float]], g: ig.Graph, sigma: float = 10.0, penalty_per_missing: float = 0.1) -> str:
     """
     scan_data: list of (BSSID, RSSI)
     g: igraph.Graph with positions and wifi nodes
+    sigma: standard deviation for Gaussian similarity
+    penalty_per_missing: penalty per missing expected BSSID
+
     Returns: name of the most likely position node
     """
     scan_dict = dict(scan_data)
@@ -355,20 +357,30 @@ def get_node_basic_graph(scan_data: List[Tuple[str, float]], g: ig.Graph) -> str
                 rssi = edge["rssi"]
                 bssid_rssi[bssid] = rssi
 
-        # Check for matching BSSIDs
-        common_bssids = set(scan_dict.keys()).intersection(bssid_rssi.keys())
+        expected_bssids = set(bssid_rssi.keys())
+        observed_bssids = set(scan_dict.keys())
+        common_bssids = expected_bssids & observed_bssids
+        missing_bssids = expected_bssids - observed_bssids
+
         if not common_bssids:
             continue
 
-        # Calculate similarity score
-        rssi_diffs = [abs(scan_dict[b] - bssid_rssi[b]) for b in common_bssids]
-        avg_diff = np.mean(rssi_diffs)
-        score = len(common_bssids) - avg_diff / 10.0  # Higher = better
+        # Gaussian RSSI similarity score
+        rssi_sims = [np.exp(-((scan_dict[b] - bssid_rssi[b]) ** 2) / (2 * sigma**2)) for b in common_bssids]
+        signal_score = sum(rssi_sims)
 
-        print(f"[DEBUG] Position {pos_name}: common={len(common_bssids)}, avg_diff={avg_diff:.2f}, score={score:.2f}")
+        # Penalty for missing expected BSSIDs
+        penalty = len(missing_bssids) * penalty_per_missing
+
+        # Total score
+        score = signal_score - penalty
+
+        print(f"[DEBUG] Position {pos_name}: matched={len(common_bssids)}, missing={len(missing_bssids)}, signal_score={signal_score:.2f}, penalty={penalty:.2f}, total={score:.2f}")
 
         if score > best_score:
             best_score = score
             best_match = pos_name
 
+    if best_match is None:
+        print("No suitable match found.")
     return best_match
