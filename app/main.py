@@ -99,6 +99,12 @@ async def load_map(map_name: str, db: Session = Depends(get_db),
         if not db_map:
             raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
 
+        if processed_maps_graphs.get(map_name):
+            return {
+                "info" : f"Map {map_name} already loaded.",
+                "graph_summary": processed_maps_graphs[map_name].summary()
+                    }
+        
         positions = db.query(models.Position).options(
             joinedload(models.Position.wifi_signals),
             joinedload(models.Position.bluetooth_signals)
@@ -119,12 +125,11 @@ async def load_map(map_name: str, db: Session = Depends(get_db),
 
         processed_maps_data[map_name] = graph_data
         graph = g.create_wifi_graph(graph_data)
-
-        was_updated = map_name in processed_maps_graphs
+        
         processed_maps_graphs[map_name] = graph
 
         return {
-            "info": f"Graph for map '{map_name}' was {'updated' if was_updated else 'created and stored'}",
+            "info": f"Graph for map '{map_name}' was loaded",
             "graph_summary": graph.summary()
         }
 
