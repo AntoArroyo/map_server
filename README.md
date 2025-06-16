@@ -67,13 +67,22 @@ uvicorn main:app --reload
 
 ---
 
-## 🐳 Docker (Optional)
+## 🐳 Docker 
 
-If you prefer using Docker:
+To run the project with docker use docker compose:
 
 ```bash
-docker build -t map_server .
-docker run -d -p 8000:8000 map_server
+docker compose up --build
+```
+
+---
+
+## 🦗 Locust 
+
+To stress test the server, user the tool locust with the file provided for the endpoint "localize" or the one you want to test 
+
+```bash
+locust -f tests/locust.py --host http://localhost:8000
 ```
 
 ---
@@ -176,12 +185,3 @@ GET /plot_graph/{graph_name}
 - Saves a plot of the loaded graph to an image (e.g., `outputPlot.png`)
 
 
-## 📌 Dependencies
-
-Install them via:
-
-```bash
-pip install -r requirements.txt
-```
-
----
