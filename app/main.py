@@ -5,7 +5,7 @@ import app.models as models
 import app.database as database
 from app.xml_manager import read_xml
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Union, List, Dict, Any
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from app.crud import save_positions_from_list
@@ -13,7 +13,8 @@ from app.schemas import PositionCreate, PositionDeleteRequest, WiFiScanPayload
 from app.auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_admin
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
-from app.localize_functions import compute_best_position_basic, get_node_basic_graph, match_graphs_return_position, match_graphs
+from app.localize_functions import compute_best_position_basic, get_node_basic_graph
+from cachetools import TTLCache
 
 app = FastAPI()
 
@@ -32,9 +33,9 @@ def get_db():
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# In-memory storage for processed WiFi data
-processed_maps_data = {}
-processed_maps_graphs = {}
+# In-memory storage for processed WiFi data, with limit 10 maps and 10 min
+processed_maps_data = TTLCache(maxsize=10, ttl=600)
+processed_maps_graphs = TTLCache(maxsize=10, ttl=600)
 
 class WiFiScan(BaseModel):
     wifi_data: List[Dict[str, Any]]
@@ -64,7 +65,10 @@ async def upload_file(map_name: str, file: UploadFile = File(...),
 
     if file.content_type != "text/xml":
         raise HTTPException(status_code=400, detail="Invalid file type. Only XML files are allowed.")
-
+    
+    db_map = db.query(models.Map).filter(models.Map.name == map_name).first()
+    if db_map:
+        raise HTTPException(status_code=400, detail="Invalid name, already exists a map with that name.")
     try:
         file_content = await file.read()  # Read the file content directly
     except Exception as e:
@@ -73,6 +77,7 @@ async def upload_file(map_name: str, file: UploadFile = File(...),
     # Process the XML content directly
     positions_data = read_xml(file_content) 
     filtered_positions = g.filter_close_points(positions_data, 3)
+    
     
 
     save_positions_from_list(db, filtered_positions, map_name, file.filename)   
@@ -90,55 +95,43 @@ async def load_map(map_name: str, db: Session = Depends(get_db),
     Load data from the database for the specified map name and create a graph.
     """
     try:
-        # Retrieve the map
-        map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
-        if not map_entry:
+        db_map = db.query(models.Map).filter(models.Map.name == map_name).first()
+        if not db_map:
             raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
 
-        # Retrieve associated positions
-        positions = db.query(models.Position).filter(models.Position.map_id == map_entry.id).all()
+        positions = db.query(models.Position).options(
+            joinedload(models.Position.wifi_signals),
+            joinedload(models.Position.bluetooth_signals)
+        ).filter(models.Position.map_id == db_map.id).all()
         if not positions:
             raise HTTPException(status_code=404, detail=f"No data found for map '{map_name}'")
 
-        # Create graph data structure
-        graph_data = []
-        for position in positions:
-            graph_data.append({
+        graph_data = [
+            {
                 "Position": {
-                    "X": position.X,
-                    "Y": position.Y,
-                    "Z": position.Z,
-                    "timestamp": position.timestamp
+                    "X": p.X, "Y": p.Y, "Z": p.Z, "timestamp": p.timestamp
                 },
-                "WiFi": [{ "BSSID": wifi.bssid, "SIGNAL": wifi.rssi } for wifi in position.wifi_signals],
-                "Bluetooth": [{ "Address": bt.address, "RSSI": bt.rssi } for bt in position.bluetooth_signals]
-            })
+                "WiFi": [{ "BSSID": wifi.bssid, "SIGNAL": wifi.rssi } for wifi in p.wifi_signals],
+                "Bluetooth": [{ "Address": bt.address, "RSSI": bt.rssi } for bt in p.bluetooth_signals]
+            }
+            for p in positions
+        ]
 
         processed_maps_data[map_name] = graph_data
-        # Create the graph
         graph = g.create_wifi_graph(graph_data)
 
-        # Save or update graph in processed_maps
-        if processed_maps_graphs.get(map_name) is None:
-            processed_maps_graphs[map_name] = graph
-            return {
-                "info": f"Graph created and stored for map '{map_name}'",
-                "graph_summary": graph.summary()
-            }
-        else:
-            # Optional: Replace the existing graph
-            processed_maps_graphs[map_name] = graph
-            return {
-                "info": f"Graph for map '{map_name}' was updated",
-                "graph_summary": graph.summary()
-            }
+        was_updated = map_name in processed_maps_graphs
+        processed_maps_graphs[map_name] = graph
+
+        return {
+            "info": f"Graph for map '{map_name}' was {'updated' if was_updated else 'created and stored'}",
+            "graph_summary": graph.summary()
+        }
 
     except HTTPException:
-        raise  # Re-raise known HTTP exceptions as-is
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading graph: {e}")
-
-
 
 
 @app.get("/plot_graph/{graph_name}")
@@ -284,7 +277,7 @@ async def localize_basic(map_name: str, payload: WiFiScanPayload):
     positon = compute_best_position_basic(processed_maps_data[map_name], payload.wifi_signals)
 
     return {"estimated_position": positon, "map": map_name}
-
+""" 
 @app.post("/localize/{map_name}")
 async def localize(map_name: str, payload: WiFiScanPayload):
 
@@ -319,7 +312,7 @@ async def localize(map_name: str, payload: WiFiScanPayload):
     score, node = match_graphs_return_position(scanned_graph, processed_maps_graphs[map_name])
 
     return {"estimated_position": node, "score": str(score), "map": map_name}
-
+ """
 @app.post("/localize_basic_graph/{map_name}")
 async def localize_basic_graph(map_name: str, payload: WiFiScanPayload):
     
@@ -332,9 +325,11 @@ async def localize_basic_graph(map_name: str, payload: WiFiScanPayload):
     for wifi_values in payload.wifi_signals:
         wifi_list.append((wifi_values.bssid, wifi_values.rssi))
     
-    node = get_node_basic_graph(wifi_list, processed_maps_graphs[map_name])        
-    if node:
-        return {"Position": node}
+    node, node_calculated = get_node_basic_graph(wifi_list, processed_maps_graphs[map_name])  
+          
+    if node and node_calculated:
+        return {"Best Node": node,
+                "Calculated Aprox Position": node_calculated}
     return {"No match found, try to move again"}
 
 

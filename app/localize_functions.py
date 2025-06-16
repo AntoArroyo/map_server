@@ -3,6 +3,7 @@ pygm.BACKEND = 'pytorch'  # or 'numpy', depending on your setup
 
 import networkx as nx
 import igraph as ig
+import ast
 from igraph import Graph
 import numpy as np
 import torch
@@ -328,59 +329,90 @@ def get_vertex_attribute(vertex, attr_name, default=None):
     except (KeyError, TypeError):
         return default
     
-def get_node_basic_graph(scan_data: List[Tuple[str, float]], g: ig.Graph, sigma: float = 10.0, penalty_per_missing: float = 0.1) -> str:
+def get_node_basic_graph(
+    scan_data: List[Tuple[str, float]], 
+    g: ig.Graph, 
+    sigma: float = 10.0, 
+    penalty_per_missing: float = 0.1, 
+    score_threshold: float = 1.5
+) :
     """
-    scan_data: list of (BSSID, RSSI)
-    g: igraph.Graph with positions and wifi nodes
-    sigma: standard deviation for Gaussian similarity
-    penalty_per_missing: penalty per missing expected BSSID
+    Localizes the device based on scan data using a graph of positions and Wi-Fi nodes.
 
-    Returns: name of the most likely position node or None there is no match
+    Parameters:
+        scan_data: List of (BSSID, RSSI)
+        g: igraph.Graph with vertices of type 'position' and 'wifi', and edges containing 'rssi'
+        sigma: Standard deviation for Gaussian similarity
+        penalty_per_missing: Penalty per missing expected BSSID
+        score_threshold: Minimum acceptable score for a match
+
+    Returns:
+        The name of the most likely position node or None if no match.
     """
     scan_dict = dict(scan_data)
-    position_nodes = [v.index for v in g.vs if v["type"] == "position"]
+    position_nodes = [v for v in g.vs if v["type"] == "position"]
 
     best_match = None
     best_score = float('-inf')
+    best_scores = {}
 
-    for pos_idx in position_nodes:
-        pos_name = g.vs[pos_idx]["name"]
+    for pos_v in position_nodes:
+        pos_idx = pos_v.index
+        pos_name = pos_v["name"]
         edges = g.incident(pos_idx, mode="OUT")
-        bssid_rssi = {}
 
-        for e in edges:
-            edge = g.es[e]
-            target = edge.target
-            target_vertex = g.vs[target]
-            if target_vertex["type"] == "wifi":
-                bssid = target_vertex["name"]
-                rssi = edge["rssi"]
-                bssid_rssi[bssid] = rssi
+        stored_bssids = {}
+        for e_idx in edges:
+            edge = g.es[e_idx]
+            wifi_v = g.vs[edge.target]
+            if wifi_v["type"] == "wifi":
+                stored_bssids[wifi_v["name"]] = edge["rssi"]
 
-        expected_bssids = set(bssid_rssi.keys())
-        observed_bssids = set(scan_dict.keys())
-        common_bssids = expected_bssids & observed_bssids
-        missing_bssids = expected_bssids - observed_bssids
+        expected = set(stored_bssids)
+        observed = set(scan_dict)
+        common = expected & observed
+        missing = expected - observed
 
-        if not common_bssids:
+        if not common:
             continue
 
-        # Gaussian RSSI similarity score
-        rssi_sims = [np.exp(-((scan_dict[b] - bssid_rssi[b]) ** 2) / (2 * sigma**2)) for b in common_bssids]
-        signal_score = sum(rssi_sims)
+        # Gaussian RSSI similarity
+        score = sum(np.exp(-((scan_dict[b] - stored_bssids[b]) ** 2) / (2 * sigma ** 2)) for b in common)
+        score -= len(missing) * penalty_per_missing
 
-        # Penalty for missing expected BSSIDs
-        penalty = len(missing_bssids) * penalty_per_missing
-
-        # Total score
-        score = signal_score - penalty
-
-       # print(f"[DEBUG] Position {pos_name}: matched={len(common_bssids)}, missing={len(missing_bssids)}, signal_score={signal_score:.2f}, penalty={penalty:.2f}, total={score:.2f}")
+        if score > score_threshold:
+            best_scores[pos_name] = score
 
         if score > best_score:
             best_score = score
             best_match = pos_name
+    
+    if best_match:
+        print(f"[INFO] Best node: {best_match} with score: {best_score:.2f}")
+    
+    if best_scores:
+         print(f"[INFO] Nodes above threshold: {best_scores}")
 
-    print(f"Node found -- {best_match} with score -- {best_score}")
-    # If there's no match returns None
-    return best_match
+    if not best_scores and best_match:
+        return None, None
+
+    # Estimate average position
+    coords = []
+    for name in best_scores:
+        try:
+            # Better: use attributes like pos_v["x"], pos_v["y"] if available
+            x, y, _ = ast.literal_eval(name)  # Assuming name = "(x, y, z)"
+            coords.append((x, y))
+        except Exception:
+            print(f"[WARNING] Could not parse coordinates from name: {name}")
+            continue
+
+    if not coords:
+        return best_match, None  # Fallback to best_match even if we can't compute the average
+
+    x_avg = sum(x for x, _ in coords) / len(coords)
+    y_avg = sum(y for _, y in coords) / len(coords)
+
+    print(f"[INFO] Estimated position: ({x_avg:.2f}, {y_avg:.2f})")
+
+    return best_match, (round(x_avg, 2), round(y_avg, 2))
