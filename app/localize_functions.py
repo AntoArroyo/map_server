@@ -393,7 +393,7 @@ def get_node_basic_graph(
     if best_scores:
          print(f"[INFO] Nodes above threshold: {best_scores}")
 
-    if not best_scores and best_match:
+    if not best_scores and not best_match:
         return None, None
 
     # Estimate average position
@@ -403,6 +403,8 @@ def get_node_basic_graph(
             # Better: use attributes like pos_v["x"], pos_v["y"] if available
             x, y, _ = ast.literal_eval(name)  # Assuming name = "(x, y, z)"
             coords.append((x, y))
+            if best_scores[name] > 3.5:
+                return best_scores[name], None
         except Exception:
             print(f"[WARNING] Could not parse coordinates from name: {name}")
             continue
