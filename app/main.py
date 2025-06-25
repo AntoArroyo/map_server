@@ -331,11 +331,17 @@ async def localize_basic_graph(map_name: str, payload: WiFiScanPayload):
         wifi_list.append((wifi_values.bssid, wifi_values.rssi))
     
     node, node_calculated = get_node_basic_graph(wifi_list, processed_maps_graphs[map_name])  
-          
-    if node and node_calculated:
-        return {"Best Node": node,
-                "Calculated Aprox Position": node_calculated}
-    return {"No match found, try to move again"}
+    
+    if not node and not node_calculated:
+        return {"No match found, try to move again"}
+    
+    msg_dict = {}
+    if node:
+        msg_dict["Best Node"] = node
+    if node_calculated:        
+        msg_dict["Calculated Node"] = node_calculated
+    
+    return msg_dict
 
 
 #############################################################################################################################
