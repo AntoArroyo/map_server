@@ -404,7 +404,7 @@ def get_node_basic_graph(
             x, y, _ = ast.literal_eval(name)  # Assuming name = "(x, y, z)"
             coords.append((x, y))
             if best_scores[name] > 3.5:
-                printf(f"[INFO] Possible 100% node match found_ {name}")
+                print(f"[INFO] Possible 100% node match found_ {name}")
                 return name, None
         except Exception:
             print(f"[WARNING] Could not parse coordinates from name: {name}")
