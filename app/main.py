@@ -1,6 +1,5 @@
 import os
 import app.graph_manager as g
-import app.wifi_localization as wl
 import app.models as models
 import app.database as database
 from app.xml_manager import read_xml
