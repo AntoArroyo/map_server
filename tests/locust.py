@@ -5,6 +5,9 @@ class FastAPIUser(HttpUser):
 
     @task
     def get_endpoint(self):
+        """
+        Localize endpoint stress test
+        """
         json_wifis =  {
                         "device_id": "mydevice",
                         "wifi_signals": [

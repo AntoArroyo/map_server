@@ -32,9 +32,9 @@ def get_db():
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# In-memory storage for processed WiFi data, with limit 10 maps and 10 min
-processed_maps_data = TTLCache(maxsize=10, ttl=600)
-processed_maps_graphs = TTLCache(maxsize=10, ttl=600)
+# In-memory storage for processed WiFi data, with limit 10 maps and 30 min
+processed_maps_data = TTLCache(maxsize=10, ttl=1800)  # used for comute basic withou graphs
+processed_maps_graphs = TTLCache(maxsize=10, ttl=1800)
 
 class WiFiScan(BaseModel):
     wifi_data: List[Dict[str, Any]]
@@ -59,6 +59,24 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 @app.put("/upload_data/{map_name}")
 async def upload_file(map_name: str, file: UploadFile = File(...),
                       db: Session = Depends(get_db), current_user: dict = Depends(get_current_admin)):
+    """
+    Upload_data endpoint, gets a map name as parameters and the file containing the positions, wifi and bluetooth signals
+    process the data and stores it in the database
+
+    Args:
+        map_name (str): Map name.
+        file (UploadFile): File containing position, wifi and bluetooth data.
+        db (Session, optional): database
+        current_user (dict, optional): check if the current user is admin.
+
+    Raises:
+        HTTPException: 400 Invalid file type. Only XML files are allowed.
+        HTTPException: 400 Invalid name, already exists a map with that name.
+        HTTPException: 500 Error reading file.
+
+    Returns:
+        (dict): info: Data store in database {map_name} successfully
+    """
     # Log the content type for debugging
     print(f"Received file with content type: {file.content_type}")
 
@@ -89,6 +107,14 @@ async def load_map(map_name: str, db: Session = Depends(get_db),
                    current_user: dict = Depends(get_current_admin)):
     """
     Load data from the database for the specified map name and create a graph.
+
+    Raises:
+        HTTPException: 404 No map found with name {map_name}
+        HTTPException: 404 No positions data found for map '{map_name}
+        HTTPException: 500 Error loading graph
+
+    Returns:
+        (dict): Graph summary
     """
     try:
         db_map = db.query(models.Map).filter(models.Map.name == map_name).first()
@@ -106,7 +132,7 @@ async def load_map(map_name: str, db: Session = Depends(get_db),
             joinedload(models.Position.bluetooth_signals)
         ).filter(models.Position.map_id == db_map.id).all()
         if not positions:
-            raise HTTPException(status_code=404, detail=f"No data found for map '{map_name}'")
+            raise HTTPException(status_code=404, detail=f"No positions data found for map '{map_name}'")
 
         graph_data = [
             {
@@ -137,20 +163,50 @@ async def load_map(map_name: str, db: Session = Depends(get_db),
 
 @app.get("/plot_graph/{graph_name}")
 async def plot_graph(graph_name: str, current_user: dict = Depends(get_current_admin)):
+    """
+    Plots graph and creates the png with the image to the current path output_graphs/
+    Args:
+        graph_name (str): graph name.
+        current_user (dict, optional): Checks if the user is admin.
+
+    Raises:
+        HTTPException: 500 Key Error
+        HTTPException: 500 Error reading map
+        HTTPException: 500 Unexpected error
+
+    Returns:
+        dict: Plotted graph {graph_name}
+    """
     try:
         
         g.plot_graph(processed_maps_graphs.get(graph_name), f"output_graphs/{graph_name}_plot.png")
         return {"info": f"Plotted graph '{graph_name}'"}, 
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=f"Key Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Key Error: {e}")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Error reading map: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading map: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 @app.post("/delete_map/{map_name}")
 async def delete_map(map_name: str, db: Session = Depends(get_db),
                      current_user: dict = Depends(get_current_admin)):
+    """
+    Deletes map from the database if it is stored
+
+    Args:
+        map_name (str): Map name to delete
+        db (Session, optional): database
+        current_user (dict, optional): Check if the user is admin.
+
+    Raises:
+        HTTPException: 404 No map found with name '{map_name}'
+        HTTPException: 404 No data found for map '{map_name}'
+        HTTPException: 500 Error deleting map
+
+    Returns:
+        dict: Map '{map_name}' and all associated data have been deleted.
+    """
     try:
         # Retrieve the map
         map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
@@ -183,6 +239,22 @@ async def delete_map(map_name: str, db: Session = Depends(get_db),
 @app.post("/add_entry/{map_name}")
 async def add_entry(map_name: str, entry: PositionCreate, db: Session = Depends(get_db),
                     current_user: dict = Depends(get_current_admin)):
+    """
+    Adds Position entry to the database to the current map associated to the name
+
+    Args:
+        map_name (str): Map name
+        entry (PositionCreate): Entry to add
+        db (Session, optional): Database. Defaults to Depends(get_db).
+        current_user (dict, optional): Check if the user is admin. Defaults to Depends(get_current_admin).
+
+    Raises:
+        HTTPException: 400 No map found with name '{map_name}'
+        HTTPException: 500 Error adding entry
+
+    Returns:
+        dict: Entry successfully added to map '{map_name}'
+    """
     try:
         # Retrieve the map
         map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
@@ -230,6 +302,22 @@ async def add_entry(map_name: str, entry: PositionCreate, db: Session = Depends(
 @app.delete("/delete_entry/{map_name}")
 async def delete_entry(map_name: str, entry: PositionDeleteRequest,
                        db: Session = Depends(get_db), current_user: dict = Depends(get_current_admin)):
+    """
+    Deletes an entry from the position table in the database
+    Args:
+        map_name (str): Map name
+        entry (PositionDeleteRequest): Entry to delete.
+        db (Session, optional): Databasse. Defaults to Depends(get_db).
+        current_user (dict, optional): Check if the current user is admin. Defaults to Depends(get_current_admin).
+
+    Raises:
+        HTTPException: 404 No map found with name '{map_name}'
+        HTTPException: 404 No matching position entry found.
+        HTTPException: 500 Error deleting entry
+
+    Returns:
+        dict: {info : Entry successfully deleted.}
+    """
     try:
         # Find the map
         map_entry = db.query(models.Map).filter(models.Map.name == map_name).first()
@@ -268,7 +356,15 @@ async def delete_entry(map_name: str, entry: PositionDeleteRequest,
 
 @app.post("/localize_basic/{map_name}")
 async def localize_basic(map_name: str, payload: WiFiScanPayload):
+    """
+    Basic localization based on BSSID comparisson without using graphs
+    Args:
+        map_name (str): Map name
+        payload (WiFiScanPayload): Wifi payload scanned
 
+    Returns:
+        dict: {estiamted_positon : postion, map : map_name}
+    """
     print(f"Received Wi-Fi data from device {payload.device_id}")
     
     scanned_signals = payload.wifi_signals
@@ -281,7 +377,20 @@ async def localize_basic(map_name: str, payload: WiFiScanPayload):
  
 @app.post("/localize_basic_graph/{map_name}")
 async def localize_basic_graph(map_name: str, payload: WiFiScanPayload):
-    
+    """
+    Localize endpoint using graphs, with the position and wifi APs as nodes and the RSSI values as weighted edges
+
+    Args:
+        map_name (str): Map name
+        payload (WiFiScanPayload): Wifi payload scanned
+
+    Raises:
+        HTTPException: 404 No map found with name '{map_name}'
+
+    Returns:
+        Best node containg the best postion match and Calculated Node containing the aproximatly position
+        dict: {Best Node: (x,y, z), Calculated Node: (x, y)}
+    """
     if processed_maps_graphs.get(map_name) is None:
         raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
     
