@@ -63,7 +63,7 @@ def compute_best_position_basic(wifi_signals: List[Dict], scanned_signals: List[
 
 
     
-def get_node_basic_graph(
+def get_estimated_position(
     scan_data: List[Tuple[str, float]], 
     g: ig.Graph, 
     sigma: float = 10.0, 

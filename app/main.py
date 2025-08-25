@@ -12,7 +12,7 @@ from app.schemas import PositionCreate, PositionDeleteRequest, WiFiScanPayload
 from app.auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_admin
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
-from app.localize_functions import compute_best_position_basic, get_node_basic_graph
+from app.localize_functions import compute_best_position_basic, get_estimated_position
 from cachetools import TTLCache
 
 app = FastAPI()
@@ -93,7 +93,7 @@ async def upload_file(map_name: str, file: UploadFile = File(...),
 
     # Process the XML content directly
     positions_data = read_xml(file_content) 
-    filtered_positions = g.filter_close_points(positions_data, 3)
+    filtered_positions = g.filter_close_points(positions_data, 2)
     
     
 
@@ -400,7 +400,7 @@ async def localize_basic_graph(map_name: str, payload: WiFiScanPayload):
     for wifi_values in payload.wifi_signals:
         wifi_list.append((wifi_values.bssid, wifi_values.rssi))
     
-    node, node_calculated = get_node_basic_graph(wifi_list, processed_maps_graphs[map_name])  
+    node, node_calculated = get_estimated_position(wifi_list, processed_maps_graphs[map_name])  
     
     if not node and not node_calculated:
         return {"No match found, try to move again"}
