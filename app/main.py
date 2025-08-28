@@ -375,8 +375,8 @@ async def localize_basic(map_name: str, payload: WiFiScanPayload):
 
     return {"estimated_position": positon, "map": map_name}
  
-@app.post("/localize_basic_graph/{map_name}")
-async def localize_basic_graph(map_name: str, payload: WiFiScanPayload):
+@app.post("/localize/{map_name}")
+async def localize(map_name: str, payload: WiFiScanPayload):
     """
     Localize endpoint using graphs, with the position and wifi APs as nodes and the RSSI values as weighted edges
 

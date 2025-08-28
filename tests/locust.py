@@ -23,4 +23,4 @@ class FastAPIUser(HttpUser):
                         { "bssid": "24:81:3b:51:09:c3", "rssi": -67 }
                     ]
 }
-        self.client.post("/localize_basic_graph/LAB", json=json_wifis)
+        self.client.post("/localize/LAB", json=json_wifis)
