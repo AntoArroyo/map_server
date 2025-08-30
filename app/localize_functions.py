@@ -1,4 +1,3 @@
-
 import igraph as ig
 import ast
 import numpy as np
@@ -70,23 +69,32 @@ def normalize_rssi(rssi: float) -> float:
 def get_estimated_position(
     scan_data: List[Tuple[str, float]], 
     g: ig.Graph, 
-    sigma: float = 10.0, 
-    penalty_per_missing: float = 0.1, 
-    score_threshold: float = 1.5
-) :
+    sigma: float = 0.1, 
+    penalty_per_missing: float = 0.01, 
+    penalty_extra: float = 0.005,
+    score_threshold: float = 0.2,
+    top_n_signals: int = 10,
+    dynamic_sigma: bool = True
+):
     """
     Localizes the device based on scan data using a graph of positions and Wi-Fi nodes.
 
     Parameters:
         scan_data: List of (BSSID, RSSI)
         g: igraph.Graph with vertices of type 'position' and 'wifi', and edges containing 'rssi'
-        sigma: Standard deviation for Gaussian similarity
+        sigma: Base standard deviation for Gaussian similarity
         penalty_per_missing: Penalty per missing expected BSSID
-        score_threshold: Minimum acceptable score for a match
+        penalty_extra: Penalty per unexpected observed BSSID
+        score_threshold: Minimum acceptable score for considering a position
+        top_n_signals: Number of strongest signals to consider
+        dynamic_sigma: Whether to reduce sigma dynamically if many signals match
 
     Returns:
-        The name of the most likely position node or None if no match.
+        The name of the most likely position node, and optionally the average (x, y) coordinates.
     """
+
+    # Use only top-N strongest signals
+    scan_data = sorted(scan_data, key=lambda x: x[1], reverse=True)[:top_n_signals]
     scan_dict = dict(scan_data)
     position_nodes = [v for v in g.vs if v["type"] == "position"]
 
@@ -108,15 +116,28 @@ def get_estimated_position(
 
         expected = set(stored_bssids)
         observed = set(scan_dict)
+
         common = expected & observed
         missing = expected - observed
+        extra = observed - expected
 
         if not common:
             continue
 
-        # Gaussian RSSI similarity
-        score = sum(np.exp(-((scan_dict[b] - stored_bssids[b]) ** 2) / (2 * sigma ** 2)) for b in common)
+        # Adjust sigma if many BSSIDs are in common
+        sigma_eff = sigma
+        if dynamic_sigma and len(common) > 5:
+            sigma_eff *= 0.7
+
+        # Compute RSSI similarity with Gaussian weighting and RSSI importance
+        score = sum(
+            np.exp(-((scan_dict[b] - stored_bssids[b]) ** 2) / (2 * sigma_eff ** 2)) * (scan_dict[b])
+            for b in common
+        )
+
+        # Penalize for missing expected and extra unexpected BSSIDs
         score -= len(missing) * penalty_per_missing
+        score -= len(extra) * penalty_extra
 
         if score > score_threshold:
             best_scores[pos_name] = score
@@ -124,32 +145,36 @@ def get_estimated_position(
         if score > best_score:
             best_score = score
             best_match = pos_name
-    
+
     if best_match:
         print(f"[INFO] Best node: {best_match} with score: {best_score:.2f}")
-    
+
     if best_scores:
-         print(f"[INFO] Nodes above threshold: {best_scores}")
+        print(f"[INFO] Nodes above threshold: {best_scores}")
 
     if not best_scores and not best_match:
         return None, None
 
-    # Estimate average position
+    # Filter best_scores to those within 90% of best_score
+    filtered_scores = {
+        name: score for name, score in best_scores.items()
+        if score >= best_score * 0.9
+    }
+
     coords = []
-    for name in best_scores:
+    for name in filtered_scores:
         try:
-            # Better: use attributes like pos_v["x"], pos_v["y"] if available
             x, y, _ = ast.literal_eval(name)  # Assuming name = "(x, y, z)"
             coords.append((x, y))
-            if best_scores[name] > 3.5:
-                print(f"[INFO] Possible 100% node match found_ {name}")
+            if filtered_scores[name] > 3.5:
+                print(f"[INFO] Possible 100% node match found: {name}")
                 return name, None
         except Exception:
             print(f"[WARNING] Could not parse coordinates from name: {name}")
             continue
 
     if not coords:
-        return best_match, None  # Fallback to best_match even if we can't compute the average
+        return best_match, None  # Fallback to best_match even if we can't average
 
     x_avg = sum(x for x, _ in coords) / len(coords)
     y_avg = sum(y for _, y in coords) / len(coords)
