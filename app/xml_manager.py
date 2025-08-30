@@ -1,7 +1,7 @@
 import os
 import xml.etree.ElementTree as ET
 
-from numpy import trunc
+from app.localize_functions import normalize_rssi
 
 def read_xml_from_file(filepath: str, filename: str):
     file_location = os.path.join(filepath, filename)
@@ -191,7 +191,7 @@ def read_xml(file_content: str):
                     position_data["WiFi"].append({
                         "SSID": ssid_elem.text if ssid_elem.text is not None else "",
                         "BSSID": bssid_elem.text,
-                        "SIGNAL": float(signal_elem.text)
+                        "SIGNAL": normalize_rssi(float(signal_elem.text))
                     })
         
         # Extract Bluetooth Devices

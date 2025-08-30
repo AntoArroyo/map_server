@@ -60,6 +60,10 @@ def compute_best_position_basic(wifi_signals: List[Dict], scanned_signals: List[
 
     return best_position
 
+# Normalize function for RSSI
+def normalize_rssi(rssi: float) -> float:
+    rssi = min(max(rssi, -90), -30) 
+    return (rssi + 90) / 60
 
 
     
