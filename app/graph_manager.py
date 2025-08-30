@@ -49,6 +49,8 @@ def create_wifi_graph(data: List[Dict[str, Any]]) -> ig.Graph:
     g.es['rssi'] = rssi_values  # Explicitly name the attribute as 'rssi'
     g.es['weight'] = rssi_values  # Keep 'weight' for compatibility with existing code
     
+    g = g.simplify(combine_edges=dict(rssi="mean", weight="mean"))
+
     return g
 
 
