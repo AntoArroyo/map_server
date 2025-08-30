@@ -12,8 +12,9 @@ from app.schemas import PositionCreate, PositionDeleteRequest, WiFiScanPayload
 from app.auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_admin
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
-from app.localize_functions import compute_best_position_basic, get_estimated_position
+from app.localize_functions import compute_best_position_basic, get_estimated_position, normalize_rssi
 from cachetools import TTLCache
+from datetime import datetime
 
 app = FastAPI()
 
@@ -41,7 +42,13 @@ class WiFiScan(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"Server Status" : "Running!"}
+    return {
+        "status": "running",
+        "server": "map_server",
+        "version": "1.0.0",
+        "uptime": str(datetime.datetime.now()),
+        "description": "Wi-Fi/Bluetooth fingerprinting map server for localization"
+    }
 
 
 @app.post("/token")
@@ -228,12 +235,21 @@ async def delete_map(map_name: str, db: Session = Depends(get_db),
 
         # Delete the map
         db.delete(map_entry)
+        
+        
+        # Deletes from the stored in memory
+        print("Deleting map from memory")
+        if processed_maps_graphs.get(map_name):
+            del processed_maps_graphs[map_name]
+        if processed_maps_data.get(map_name):
+            del processed_maps_graphs[map_name]
 
         db.commit()
         return {"info": f"Map '{map_name}' and all associated data have been deleted."}
 
     except Exception as e:
         db.rollback()
+        print("Error while deleting the map")
         raise HTTPException(status_code=500, detail=f"Error deleting map: {e}")
 
 @app.post("/add_entry/{map_name}")
