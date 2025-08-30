@@ -96,7 +96,6 @@ def filter_close_points( data, threshold) -> list:
 
 
 def plot_graph(g: ig.Graph, output_path: str):
-    # Create directory if it doesn't exist
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -109,8 +108,8 @@ def plot_graph(g: ig.Graph, output_path: str):
         layout=layout,
         vertex_label=g.vs["name"],
         vertex_color=["blue" if v["type"] == "position" else "red" for v in g.vs],
-        edge_width=[w / 10.0 for w in g.es["rssi"]],  
-        edge_label=g.es["rssi"],
+        edge_width=[max(0.5, w * 5.0) for w in g.es["rssi"]],  
+        edge_label=[f"{w:.2f}" for w in g.es["rssi"]],
         vertex_size=0.5,
         mark_groups=True
     )
