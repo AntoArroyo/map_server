@@ -5,8 +5,9 @@ import app.database as database
 from app.xml_manager import read_xml
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import update, MetaData
 from typing import List, Dict, Any
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Body
 from app.crud import save_positions_from_list
 from app.schemas import PositionCreate, PositionDeleteRequest, WiFiScanPayload
 from app.auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_admin
@@ -15,6 +16,7 @@ from datetime import timedelta
 from app.localize_functions import compute_best_position_basic, get_estimated_position, normalize_rssi
 from cachetools import TTLCache
 from datetime import datetime
+import json
 
 app = FastAPI()
 
@@ -46,7 +48,7 @@ def read_root():
         "status": "running",
         "server": "map_server",
         "version": "1.0.0",
-        "uptime": str(datetime.datetime.now()),
+        "uptime": str(datetime.today().strftime("%d/%m/%y %H:%M:%S")),
         "description": "Wi-Fi/Bluetooth fingerprinting map server for localization"
     }
 
@@ -314,6 +316,51 @@ async def add_entry(map_name: str, entry: PositionCreate, db: Session = Depends(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error adding entry: {e}")
+
+
+@app.post("add_supermap/{super_map}")
+async def add_to_super_map(
+    super_map: str,
+    map_json: List[str] = Body(..., description="Lista de nombres de mapas a añadir"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_admin)
+):
+    """
+    Añade una lista de mapas al SuperMap pasado como argumento al endpoint.
+
+    Args:
+        super_map (str): Nombre del SuperMap.
+        map_json (List[str]): Lista con nombres de los mapas a añadir.
+    """
+
+    # Buscar el SuperMap
+    sm_entry = db.query(models.SuperMaps).filter(models.SuperMaps.name == super_map).first()
+    if not sm_entry:
+        raise HTTPException(status_code=404, detail=f"No SuperMap found with name '{super_map}'")
+
+    updated = []
+    not_found = []
+
+    for m in map_json:
+        map_found = db.query(models.Map).filter(models.Map.name == m).first()
+        if not map_found:
+            not_found.append(m)
+            continue
+
+        # Asignar el ID del SuperMap al mapa
+        map_found.super_map_id = sm_entry.id
+        db.add(map_found)
+        updated.append(m)
+
+    db.commit()
+
+    return {
+        "info": f"Maps added to SuperMap '{super_map}'",
+        "updated_maps": updated,
+        "not_found": not_found
+    }
+
+
 
 @app.delete("/delete_entry/{map_name}")
 async def delete_entry(map_name: str, entry: PositionDeleteRequest,

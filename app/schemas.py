@@ -10,14 +10,6 @@ class BluetoothSignalBase(BaseModel):
     address: str
     rssi: float
 
-class PositionBase(BaseModel):
-    pos_x: float
-    pos_y: float
-    pos_z: float
-    map_id: int
-    wifi_signals: List[WiFiSignalBase]
-    bluetooth_signals: List[BluetoothSignalBase]
-
 class MapBase(BaseModel):
     name: str
 
@@ -29,16 +21,21 @@ class PositionCreate(BaseModel):
     wifi_signals: List[WiFiSignalBase] = []
     bluetooth_signals: List[BluetoothSignalBase] = []
     timestamp: Optional[str] = None  
+    sm_id: Optional[str]
+    sm_name: Optional[str]
 
 class PositionDeleteRequest(BaseModel):
     pos_x: float
     pos_y: float
     pos_z: float
 
-class Position(PositionBase):
+class Position(PositionCreate):
     id: int
     timestamp: Optional[str]
 
+class SuperMap(BaseModel):
+    id: int
+    name: str
 
 model_config = ConfigDict(from_attributes=True)
 # Enable ORM mode for SQLAlchemy compatibility
@@ -46,7 +43,6 @@ model_config = ConfigDict(from_attributes=True)
 
 class User(BaseModel):
     username: str
-    email :str
     disable: bool
     
 class WiFiScanPayload(BaseModel):

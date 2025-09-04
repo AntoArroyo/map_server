@@ -1,5 +1,5 @@
 from pydantic import ConfigDict
-from sqlalchemy import Column, Integer, Float, String, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, Float, String, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -24,8 +24,13 @@ class Map(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False, index=True)
     filename = Column(String, unique=True, nullable=False, index=True)
+    sm_id = Column(Integer, ForeignKey("SUPERMAP.id"), nullable=True)
+    sm_name = Column(String, ForeignKey("SUPERMAP.name"), nullable=True)
 
-
+class SuperMaps(Base):
+    __tablename__ = "SUPERMAP"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True, unique=True )
 class WiFiSignal(Base):
     __tablename__ = "WIFI_SIGNALS"
 
@@ -46,3 +51,11 @@ class BluetoothSignal(Base):
     position_id = Column(Integer, ForeignKey("POSITIONS.id"))
 
     position = relationship("Position", back_populates="bluetooth_signals")
+class Users(Base):
+    __tablename__ = "USERS"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_name = Column(String, index=True)
+    user_password = Column(String)
+    user_rol = Column(String)
+    user_status = Column(Boolean)
