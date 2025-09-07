@@ -414,7 +414,7 @@ async def localize(map_name: str, payload: WiFiScanPayload):
     
     wifi_list = []
     for wifi_values in payload.wifi_signals:
-        wifi_list.append((wifi_values.bssid, wifi_values.rssi))
+        wifi_list.append((wifi_values.bssid, normalize_rssi(wifi_values.rssi)))
     
     node, node_calculated = get_estimated_position(wifi_list, processed_maps_graphs[map_name])  
     
