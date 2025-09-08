@@ -74,7 +74,8 @@ def get_estimated_position(
     penalty_extra: float = 0.005,
     score_threshold: float = 0.2,
     top_n_signals: int = 10,
-    dynamic_sigma: bool = True
+    dynamic_sigma: bool = True,
+    common_bssid_threshold: int = 5
 ):
     """
     Localizes the device based on scan data using a graph of positions and Wi-Fi nodes.
@@ -121,12 +122,13 @@ def get_estimated_position(
         missing = expected - observed
         extra = observed - expected
 
+        # Skip if not common BSSIDs
         if not common:
             continue
 
         # Adjust sigma if many BSSIDs are in common
         sigma_eff = sigma
-        if dynamic_sigma and len(common) > 5:
+        if dynamic_sigma and len(common) > common_bssid_threshold:
             sigma_eff *= 0.7
 
         # Compute RSSI similarity with Gaussian weighting and RSSI importance
@@ -182,3 +184,111 @@ def get_estimated_position(
     print(f"[INFO] Estimated position: ({x_avg:.2f}, {y_avg:.2f})")
 
     return best_match, (round(x_avg, 2), round(y_avg, 2))
+
+
+
+def build_scan_graph(scan_data):
+    """
+    Crea un grafo estrella para el escaneo:
+    - Un vértice central llamado 'scan_center'
+    - Un vértice por cada BSSID con arista ponderada por RSSI
+    """
+    g = ig.Graph()
+    g.add_vertex(name="scan_center", type="scan")
+
+    for bssid, rssi in scan_data:
+        g.add_vertex(name=bssid, type="wifi")
+        g.add_edge("scan_center", bssid, rssi=rssi)
+
+    return g
+
+def get_position_subgraph(map_g, pos_vertex):
+    """
+    Devuelve un subgrafo que contiene:
+    - El nodo de posición
+    - Todos los vértices wifi conectados y las aristas RSSI
+    """
+    neighbors = map_g.neighbors(pos_vertex, mode="OUT")
+    nodes = [pos_vertex] + neighbors
+    return map_g.subgraph(nodes)
+
+
+
+def graph_similarity(scan_g, pos_sub_g, sigma=8):
+    # Extraer RSSI de ambos grafos
+    def get_edges(g, center):
+        return {
+            g.vs[edge.target if edge.source == center else edge.source]["name"]: edge["rssi"]
+            for edge in g.es[g.incident(center, mode="OUT")]
+        }
+
+    scan_center = scan_g.vs.find(type="scan").index
+    scan_edges = get_edges(scan_g, scan_center)
+
+    pos_center = [v.index for v in pos_sub_g.vs if v["type"] == "position"][0]
+    pos_edges = get_edges(pos_sub_g, pos_center)
+
+    common = set(scan_edges) & set(pos_edges)
+    missing = set(pos_edges) - set(scan_edges)
+    extra = set(scan_edges) - set(pos_edges)
+
+    if not common:
+        return float("-inf")
+
+    score = sum(
+        np.exp(-((scan_edges[b] - pos_edges[b])**2) / (2*sigma**2))
+        for b in common
+    )
+    # Penalizaciones simples
+    score -= 0.1 * len(missing)
+    score -= 0.05 * len(extra)
+    return score
+
+def localize_by_graph_matching(scan_data, map_g):
+    scan_g = build_scan_graph(scan_data)
+
+    best_score = float("-inf")
+    best_pos = None
+    try:
+        for v in map_g.vs.select(type="position"):
+            sub = get_position_subgraph(map_g, v.index)
+            s = graph_similarity(scan_g, sub)
+            if s > best_score:
+                best_score = s
+                best_pos = v["name"]
+        best_pos_list = []
+        for v in map_g.vs.select(type="position"):
+            sub = get_position_subgraph(map_g, v.index)
+            s = graph_similarity(scan_g, sub)
+            if s >= best_score:
+                best_pos_list.append(v["name"])
+        print(f"Best position list len -- {len(best_pos_list)}")  
+        if len(best_pos_list) > 1:
+            x_coords = 0
+            y_coords = 0
+            z_coords = 0
+            for pos in best_pos_list:
+                (x, y, z) = parse_coordinate(pos)
+                x_coords += x
+                y_coords += y
+                z_coords += z
+            best_pos = (x_coords/len(best_pos), y_coords/len(best_pos), z_coords/len(best_pos))
+            best_score = 0.0
+        return best_pos, best_score
+    except Exception as e:
+        print(f"Error while localize with graph matching -- {e}")
+    # In case only 1 pos
+    return best_pos, best_score
+
+
+def parse_coordinate(coord_str: str):
+    """
+    Parse a string like "(-4.353343681658524, 29.05150388982781, 0.0)"
+    into a tuple of floats (-4.353343681658524, 29.05150388982781, 0.0).
+    """
+    # Remove any whitespace and enclosing parentheses
+    stripped = coord_str.strip().strip("()")
+    # Split by comma
+    parts = stripped.split(",")
+    # Convert each piece to float
+    return tuple(float(p) for p in parts)

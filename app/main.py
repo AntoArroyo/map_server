@@ -12,7 +12,7 @@ from app.schemas import PositionCreate, PositionDeleteRequest, WiFiScanPayload
 from app.auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_admin
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
-from app.localize_functions import compute_best_position_basic, get_estimated_position, normalize_rssi
+from app.localize_functions import compute_best_position_basic, get_estimated_position, normalize_rssi, localize_by_graph_matching
 from cachetools import TTLCache
 from datetime import datetime
 
@@ -429,3 +429,20 @@ async def localize(map_name: str, payload: WiFiScanPayload):
     
     return msg_dict
 
+@app.post("/localize_graph/{map_name}")
+async def localize_graph_match(map_name: str, payload: WiFiScanPayload):
+    
+    if processed_maps_graphs.get(map_name) is None:
+        raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
+    
+    print(f"Received Wi-Fi data from device {payload.device_id}")
+    
+    wifi_list = []
+    for wifi_values in payload.wifi_signals:
+        wifi_list.append((wifi_values.bssid, normalize_rssi(wifi_values.rssi)))
+        
+    pos, score = localize_by_graph_matching(wifi_list, processed_maps_graphs[map_name])
+    
+    print(f"Estimated position: {pos}, score: {score:.2f}")
+    
+    return {"EstimatedPosition": pos}
