@@ -46,7 +46,7 @@ def read_root():
         "status": "running",
         "server": "map_server",
         "version": "1.0.0",
-        "uptime": str(datetime.datetime.now()),
+        "uptime": str(datetime.now()),
         "description": "Wi-Fi/Bluetooth fingerprinting map server for localization"
     }
 
@@ -369,32 +369,11 @@ async def delete_entry(map_name: str, entry: PositionDeleteRequest,
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting entry: {e}")
 
-
-@app.post("/localize_basic/{map_name}")
-async def localize_basic(map_name: str, payload: WiFiScanPayload):
-    """
-    Basic localization based on BSSID comparisson without using graphs
-    Args:
-        map_name (str): Map name
-        payload (WiFiScanPayload): Wifi payload scanned
-
-    Returns:
-        dict: {estiamted_positon : postion, map : map_name}
-    """
-    print(f"Received Wi-Fi data from device {payload.device_id}")
-    
-    scanned_signals = payload.wifi_signals
-    for signal in scanned_signals:
-        print(f" SINGAL PAYLOAD - {signal.bssid} --  RSSI {signal.rssi}")
-    
-    positon = compute_best_position_basic(processed_maps_data[map_name], payload.wifi_signals)
-
-    return {"estimated_position": positon, "map": map_name}
  
-@app.post("/localize/{map_name}")
-async def localize(map_name: str, payload: WiFiScanPayload):
+@app.post("/localize_basic/{map_name}")
+async def localize_1_graph(map_name: str, payload: WiFiScanPayload):
     """
-    Localize endpoint using graphs, with the position and wifi APs as nodes and the RSSI values as weighted edges
+    Localize endpoint using graph, with the position and wifi APs as nodes and the RSSI values as weighted edges
 
     Args:
         map_name (str): Map name
@@ -429,9 +408,22 @@ async def localize(map_name: str, payload: WiFiScanPayload):
     
     return msg_dict
 
-@app.post("/localize_graph/{map_name}")
+@app.post("/localize/{map_name}")
 async def localize_graph_match(map_name: str, payload: WiFiScanPayload):
-    
+    """
+    Localize endpoint using graph comaprisson, with the position and wifi APs as nodes and the RSSI values as weighted edges
+
+    Args:
+        map_name (str): Map name
+        payload (WiFiScanPayload): Wifi payload scanned
+
+    Raises:
+        HTTPException: 404 No map found with name '{map_name}'
+
+    Returns:
+        Best node containg the best postion match and Calculated Node containing the aproximatly position
+        dict: {EstimatedPosition: pos}
+    """
     if processed_maps_graphs.get(map_name) is None:
         raise HTTPException(status_code=404, detail=f"No map found with name '{map_name}'")
     

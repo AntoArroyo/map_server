@@ -102,13 +102,27 @@ def plot_graph(g: ig.Graph, output_path: str):
 
     layout = g.layout("kk")
     _, ax = plt.subplots(figsize=(10, 10))
+    # Format vertex labels: if it's a position (tuple or string with coords), keep only 2 decimals
+    labels = []
+    for v in g.vs:
+        if v["type"] == "position":
+            try:
+                # assume stored as "(x, y, z)" string
+                coords = v["name"].strip("()").split(",")
+                formatted = "(" + ", ".join(f"{float(c):.2f}" for c in coords) + ")"
+                labels.append(formatted)
+            except Exception:
+                labels.append(str(v["name"]))
+        else:
+            labels.append(str(v["name"]))
+
     ig.plot(
         g,
         target=ax,
         layout=layout,
-        vertex_label=g.vs["name"],
+        vertex_label=labels,
         vertex_color=["blue" if v["type"] == "position" else "red" for v in g.vs],
-        edge_width=[max(0.5, w * 5.0) for w in g.es["rssi"]],  
+        edge_width=[max(0.5, w * 5.0) for w in g.es["rssi"]],
         edge_label=[f"{w:.2f}" for w in g.es["rssi"]],
         vertex_size=0.5,
         mark_groups=True
