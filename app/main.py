@@ -100,7 +100,7 @@ async def upload_file(map_name: str, file: UploadFile = File(...),
 
     # Process the XML content directly
     positions_data = read_xml(file_content) 
-    filtered_positions = g.filter_close_points(positions_data, 2)
+    filtered_positions = g.filter_close_points(positions_data, 3)
     
     
 
@@ -404,7 +404,7 @@ async def localize_1_graph(map_name: str, payload: WiFiScanPayload):
     if node:
         msg_dict["Best Node"] = node
     if node_calculated:        
-        msg_dict["Calculated Node"] = node_calculated
+        msg_dict["EstimatedPosition"] = node_calculated
     
     return msg_dict
 

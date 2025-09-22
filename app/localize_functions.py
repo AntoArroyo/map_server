@@ -214,8 +214,7 @@ def get_position_subgraph(map_g, pos_vertex):
 
 
 
-def graph_similarity(scan_g, pos_sub_g, sigma=8):
-    # Extraer RSSI de ambos grafos
+def graph_similarity(scan_g, pos_sub_g, sigma=0.2, alpha=0.02, betha=0.05):
     def get_edges(g, center):
         return {
             g.vs[edge.target if edge.source == center else edge.source]["name"]: edge["rssi"]
@@ -235,18 +234,25 @@ def graph_similarity(scan_g, pos_sub_g, sigma=8):
     if not common:
         return float("-inf")
 
-    score = sum(
+    # similitud gaussiana por AP (RSSI en [0,1])
+    similarities = [
         np.exp(-((scan_edges[b] - pos_edges[b])**2) / (2*sigma**2))
         for b in common
-    )
-    # Penalizaciones simples
-    score -= 0.1 * len(missing)
-    score -= 0.05 * len(extra)
+    ]
+
+    # score normalizado entre 0 y 1
+    score = sum(similarities) / len(common)
+
+    # penalizaciones ajustadas
+    score -= alpha * len(missing)
+    score -= betha * len(extra)
+
     return score
 
-def localize_by_graph_matching(scan_data, map_g):
-    scan_g = build_scan_graph(scan_data)
 
+def localize_by_graph_matching(scan_data, map_g, best_score_threshold=0.60):
+    scan_g = build_scan_graph(scan_data)
+    best_pos_list = []
     best_score = float("-inf")
     best_pos = None
     try:
@@ -254,31 +260,34 @@ def localize_by_graph_matching(scan_data, map_g):
             sub = get_position_subgraph(map_g, v.index)
             s = graph_similarity(scan_g, sub)
             if s > best_score:
+                #print(f"BEST Score -- {s}")
                 best_score = s
                 best_pos = v["name"]
-        best_pos_list = []
-        for v in map_g.vs.select(type="position"):
-            sub = get_position_subgraph(map_g, v.index)
-            s = graph_similarity(scan_g, sub)
-            if s >= best_score:
+            if s > best_score_threshold:
                 best_pos_list.append(v["name"])
-        print(f"Best position list len -- {len(best_pos_list)}")  
-        if len(best_pos_list) > 1:
+        len_best_positions = len(best_pos_list)
+        print(f"Best position list len -- {len_best_positions}") 
+        print(f"Best position list -- {best_pos_list}") 
+        if len_best_positions > 1:
             x_coords = 0
-            y_coords = 0
+            y_coords = best_score_threshold
             z_coords = 0
+           # print(f"LIST BEST POSITION -- {best_pos_list}")
             for pos in best_pos_list:
                 (x, y, z) = parse_coordinate(pos)
                 x_coords += x
                 y_coords += y
                 z_coords += z
-            best_pos = (x_coords/len(best_pos), y_coords/len(best_pos), z_coords/len(best_pos))
-            best_score = 0.0
+            #print(f"x -- {x_coords} y -- {y_coords}")
+            #print(f"LEN -- {len_best_positions}")
+            best_pos = (x_coords/len_best_positions, y_coords/len_best_positions, z_coords)
+            best_pos = str(best_pos)
         return best_pos, best_score
     except Exception as e:
         print(f"Error while localize with graph matching -- {e}")
     # In case only 1 pos
-    return best_pos, best_score
+    best_pos_parsed = parse_coordinate(best_pos)
+    return best_pos_parsed, best_score
 
 
 def parse_coordinate(coord_str: str):
