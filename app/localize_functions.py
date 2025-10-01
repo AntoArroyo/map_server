@@ -214,7 +214,7 @@ def get_position_subgraph(map_g, pos_vertex):
 
 
 
-def graph_similarity(scan_g, pos_sub_g, sigma=0.2, alpha=0.02, betha=0.05):
+def graph_similarity(scan_g, pos_sub_g, sigma=0.2, alpha=0.02, betha=0.02):
     def get_edges(g, center):
         return {
             g.vs[edge.target if edge.source == center else edge.source]["name"]: edge["rssi"]
@@ -250,7 +250,7 @@ def graph_similarity(scan_g, pos_sub_g, sigma=0.2, alpha=0.02, betha=0.05):
     return score
 
 
-def localize_by_graph_matching(scan_data, map_g, best_score_threshold=0.60):
+def localize_by_graph_matching(scan_data, map_g, best_score_threshold=0.65):
     scan_g = build_scan_graph(scan_data)
     best_pos_list = []
     best_score = float("-inf")
